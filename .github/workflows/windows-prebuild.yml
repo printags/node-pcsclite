@@ -1,0 +1,63 @@
+name: Windows Prebuild & Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  prebuild-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20.x
+      
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Prebuild for Windows
+        run: npm run prebuild
+        
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: prebuilds-windows
+          path: prebuilds/
+
+  publish-package:
+    needs: prebuild-windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20.x
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@pokusew'
+      
+      - name: Download prebuilds
+        uses: actions/download-artifact@v3
+        with:
+          name: prebuilds-windows
+          path: prebuilds
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: List prebuilds directory
+        run: find prebuilds -type f | sort
+      
+      - name: Publish to GitHub Packages
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
