@@ -53,15 +53,9 @@ Bindings over pcsclite to access Smart Cards. It works in **Linux**, **macOS** a
 
 **Requirements:** **at least Node.js 8 or newer** (see [this FAQ](#which-nodejs-versions-are-supported) for more info)
 
-1. **Node Native Modules build tools**
+1. **Pre-built binaries**
 
-    Because this library uses Node Native Modules (C++ Addons),
-    which are automatically built (using [node-gyp](https://github.com/nodejs/node-gyp))
-    when installing via npm or yarn, you need to have installed **C/C++ compiler
-    toolchain and some other tools** depending on your OS.
-    
-    **Please refer to the [node-gyp > Installation](https://github.com/nodejs/node-gyp#installation)**
-    for the list of required tools depending on your OS and steps how to install them.
+    This library now provides pre-built binaries for Windows, macOS, and Linux, so you don't need to have a C/C++ compiler installed in most cases. The pre-built binaries are automatically downloaded during installation.
 
 2. **PC/SC API in your OS**
 
@@ -72,14 +66,10 @@ Bindings over pcsclite to access Smart Cards. It works in **Linux**, **macOS** a
 
     > For example, in Debian/Ubuntu:
     > ```bash
-    > apt-get install libpcsclite1 libpcsclite-dev
-    > ```
-    > To run any code you will also need to have installed the pcsc daemon:
-    > ```bash
-    > apt-get install pcscd
+    > apt-get install libpcsclite1 libpcsclite-dev pcscd
     > ```
 
-3. **Once you have all needed libraries, you can install node-pcsclite using npm:**
+3. **Install node-pcsclite using npm or yarn:**
 
     ```bash
     npm install @pokusew/pcsclite --save
@@ -90,6 +80,13 @@ Bindings over pcsclite to access Smart Cards. It works in **Linux**, **macOS** a
     ```bash
     yarn add @pokusew/pcsclite
     ```
+
+4. **Building from source (if needed)**
+
+    If a pre-built binary for your platform is not available, the library will automatically build from source using [node-gyp](https://github.com/nodejs/node-gyp). In this case, you'll need to have a C/C++ compiler and the PC/SC development libraries installed.
+    
+    **Please refer to the [node-gyp > Installation](https://github.com/nodejs/node-gyp#installation)**
+    for the list of required tools depending on your OS.
 
 
 ## Example
@@ -353,28 +350,19 @@ On top of that, React Native does not contain any Node.js runtime.
 
 ### Error: Cannot find module '../build/Release/pcsclite.node'
 
-@pokusew/pcsclite uses **Node Native Modules** (Node.js C++ Addon) to access PC/SC API (pcsclite).
-The Node.js native C++ addon is built during installation via [node-gyp](https://github.com/nodejs/node-gyp)
-(see package.json > scripts > [install](https://github.com/pokusew/node-pcsclite/blob/master/package.json#L37)).
-When you see the error `Cannot find module '../build/Release/pcsclite.node'`, something probably
-**went wrong during the installation**.
+Starting from version 0.7.0, @pokusew/pcsclite uses pre-built binaries via `node-gyp-build` which should avoid this error. However, if you still encounter this issue, it could be due to one of these reasons:
 
-Follow the steps below to resolve your problem:
-1. If **there are any errors** in the output of the `npm install` resp. `yarn install`,
-    * **ensure you meet all the requirements** described in the [Installation](#installation) section of this README.
-        Then try reinstalling @pokusew/pcsclite (npm uninstall / yarn remove and then npm install / yarn add).
-    * **If the problem persists**, [open a new issue](https://github.com/pokusew/node-pcsclite/issues/new)
-        and be sure to include the output of the `npm install` resp. `yarn install`
-        and the details about your platform, OS, Node.js version and npm/yarn version.
-2. If **there are no errors** during the installation,
-    * then try reinstalling @pokusew/pcsclite (npm uninstall / yarn remove and then npm install / yarn add).
-    * If it does not help, then examine the contents of the folder `node_modules/@pokusew/pcsclite` in your project
-        (in case you installed @pokusew/pcsclite as a dependency). There should be a `build` folder with
-        a `Release` folder inside. In the `Release` folder, there should be a `pcsclite.node` file.
-        It is possible that this file is somewhere else. Whether you find the file somewhere or not,
-        please [open a new issue](https://github.com/pokusew/node-pcsclite/issues/new)
-        and describe the problem and be sure to include the details
-        about your platform, OS, Node.js version and npm/yarn version.
+1. **You're using an older version** of the library that doesn't include pre-built binaries. Update to the latest version.
+
+2. **No pre-built binary is available for your platform**:
+   * In this case, the library tries to build from source using [node-gyp](https://github.com/nodejs/node-gyp)
+   * Make sure you have all the requirements for building from source as described in the [Installation](#installation) section
+
+3. **There's an issue with the pre-built binary installation**:
+   * Try clearing your npm cache: `npm cache clean --force`
+   * Reinstall the package: `npm uninstall @pokusew/pcsclite && npm install @pokusew/pcsclite`
+
+If the problem persists, [open a new issue](https://github.com/pokusew/node-pcsclite/issues/new) with details about your platform, OS, Node.js version, and npm/yarn version.
 
 
 ## License
