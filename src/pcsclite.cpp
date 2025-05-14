@@ -1,37 +1,32 @@
 #include "pcsclite.h"
 #include "common.h"
 
-using namespace v8;
-using namespace node;
+// PCSCLite implementation
 
-Nan::Persistent<Function> PCSCLite::constructor;
+Napi::Object PCSCLite::Init(Napi::Env env, Napi::Object exports) {
+    Napi::Function func = DefineClass(env, "PCSCLite", {
+        InstanceMethod("start", &PCSCLite::Start),
+        InstanceMethod("close", &PCSCLite::Close)
+    });
 
-Nan::AsyncResource *PCSCLite::async_resource = new Nan::AsyncResource("PCSCLite_StaticAsyncResource");
+    Napi::FunctionReference* constructor = new Napi::FunctionReference();
+    *constructor = Napi::Persistent(func);
+    env.SetInstanceData(constructor);
 
-void PCSCLite::init(Local<Object> target) {
-
-    // Prepare constructor template
-    Local<FunctionTemplate> tpl = Nan::New<FunctionTemplate>(New);
-    tpl->SetClassName(Nan::New("PCSCLite").ToLocalChecked());
-    tpl->InstanceTemplate()->SetInternalFieldCount(1);
-    // Prototype
-    Nan::SetPrototypeTemplate(tpl, "start", Nan::New<FunctionTemplate>(Start));
-    Nan::SetPrototypeTemplate(tpl, "close", Nan::New<FunctionTemplate>(Close));
-
-
-    constructor.Reset(Nan::GetFunction(tpl).ToLocalChecked());
-    Nan::Set(target, Nan::New("PCSCLite").ToLocalChecked(), Nan::GetFunction(tpl).ToLocalChecked());
+    exports.Set("PCSCLite", func);
+    return exports;
 }
 
-PCSCLite::PCSCLite(): m_card_context(0),
-                      m_card_reader_state(),
-                      m_status_thread(0),
-                      m_state(0) {
-
-    assert(uv_mutex_init(&m_mutex) == 0);
-    assert(uv_cond_init(&m_cond) == 0);
-
-    // TODO: consider removing this Windows workaround that should not be needed anymore
+PCSCLite::PCSCLite(const Napi::CallbackInfo& info) 
+    : Napi::ObjectWrap<PCSCLite>(info),
+      m_card_context(0),
+      m_card_reader_state(),
+      m_mutex(),
+      m_cond(),
+      m_pnp(false),
+      m_state(0) {
+    
+    // Windows-specific service initialization code
 #ifdef _WIN32
     HKEY hKey;
     DWORD startStatus, datacb = sizeof(DWORD);
@@ -68,286 +63,314 @@ postServiceCheck:
 #endif // _WIN32
 
     LONG result;
-    // TODO: consider removing this do-while Windows workaround that should not be needed anymore
     do {
-        // TODO: make dwScope (now hard-coded to SCARD_SCOPE_SYSTEM) customisable
-        result = SCardEstablishContext(SCARD_SCOPE_SYSTEM,
-                                            NULL,
-                                            NULL,
-                                            &m_card_context);
+        result = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &m_card_context);
     } while(result == SCARD_E_NO_SERVICE || result == SCARD_E_SERVICE_STOPPED);
+    
     if (result != SCARD_S_SUCCESS) {
-        Nan::ThrowError(error_msg("SCardEstablishContext", result).c_str());
-    } else {
-        m_card_reader_state.szReader = "\\\\?PnP?\\Notification";
-        m_card_reader_state.dwCurrentState = SCARD_STATE_UNAWARE;
-        result = SCardGetStatusChange(m_card_context,
-                                      0,
-                                      &m_card_reader_state,
-                                      1);
+        Napi::Error::New(info.Env(), error_msg("SCardEstablishContext", result)).ThrowAsJavaScriptException();
+        return;
+    } 
+    
+    m_card_reader_state.szReader = "\\\\?PnP?\\Notification";
+    m_card_reader_state.dwCurrentState = SCARD_STATE_UNAWARE;
+    result = SCardGetStatusChange(m_card_context, 0, &m_card_reader_state, 1);
 
-        if ((result != SCARD_S_SUCCESS) && (result != (LONG)SCARD_E_TIMEOUT)) {
-            Nan::ThrowError(error_msg("SCardGetStatusChange", result).c_str());
-        } else {
-            m_pnp = !(m_card_reader_state.dwEventState & SCARD_STATE_UNKNOWN);
-        }
+    if ((result != SCARD_S_SUCCESS) && (result != (LONG)SCARD_E_TIMEOUT)) {
+        Napi::Error::New(info.Env(), error_msg("SCardGetStatusChange", result)).ThrowAsJavaScriptException();
+    } else {
+        m_pnp = !(m_card_reader_state.dwEventState & SCARD_STATE_UNKNOWN);
     }
 }
 
 PCSCLite::~PCSCLite() {
-
-    if (m_status_thread) {
+    if (m_status_thread.joinable()) {
         SCardCancel(m_card_context);
-        assert(uv_thread_join(&m_status_thread) == 0);
+        m_status_thread.join();
     }
 
     if (m_card_context) {
         SCardReleaseContext(m_card_context);
     }
-
-    uv_cond_destroy(&m_cond);
-    uv_mutex_destroy(&m_mutex);
 }
 
-NAN_METHOD(PCSCLite::New) {
-    Nan::HandleScope scope;
-    PCSCLite* obj = new PCSCLite();
-    obj->Wrap(info.Holder());
-    info.GetReturnValue().Set(info.Holder());
+// ReaderWorker implementation
+PCSCLite::ReaderWorker::ReaderWorker(Napi::Function& callback, PCSCLite* pcsclite)
+    : Napi::AsyncWorker(callback),
+      pcsclite_(pcsclite) {
+    async_result_ = new AsyncResult();
 }
 
-NAN_METHOD(PCSCLite::Start) {
-
-    Nan::HandleScope scope;
-
-    PCSCLite* obj = Nan::ObjectWrap::Unwrap<PCSCLite>(info.This());
-    Local<Function> cb = Local<Function>::Cast(info[0]);
-
-    AsyncBaton *async_baton = new AsyncBaton();
-    async_baton->async.data = async_baton;
-    async_baton->callback.Reset(cb);
-    async_baton->pcsclite = obj;
-
-    uv_async_init(uv_default_loop(), &async_baton->async, (uv_async_cb)HandleReaderStatusChange);
-    int ret = uv_thread_create(&obj->m_status_thread, HandlerFunction, async_baton);
-    assert(ret == 0);
-
-
+PCSCLite::ReaderWorker::~ReaderWorker() {
+    if (async_result_) {
+#ifdef SCARD_AUTOALLOCATE
+        if (async_result_->readers_name) {
+            SCardFreeMemory(pcsclite_->m_card_context, async_result_->readers_name);
+        }
+#else
+        delete[] async_result_->readers_name;
+#endif
+        delete async_result_;
+    }
 }
 
-NAN_METHOD(PCSCLite::Close) {
+void PCSCLite::ReaderWorker::Execute() {
+    // This will run on the worker thread
+    LONG result = pcsclite_->get_card_readers(async_result_);
+    
+    if (result == (LONG)SCARD_E_NO_READERS_AVAILABLE) {
+        result = SCARD_S_SUCCESS;
+    }
 
-    Nan::HandleScope scope;
+    async_result_->result = result;
+    if (result != SCARD_S_SUCCESS) {
+        std::string error = error_msg("SCardListReaders", result);
+        SetError(error);
+        async_result_->err_msg = error;
+    }
+}
 
-    PCSCLite* obj = Nan::ObjectWrap::Unwrap<PCSCLite>(info.This());
+void PCSCLite::ReaderWorker::OnOK() {
+    Napi::HandleScope scope(Env());
+    
+    // Prepare callback arguments
+    if (async_result_->readers_name && async_result_->readers_name_length > 0) {
+        Callback().Call({
+            Env().Undefined(),
+            Napi::Buffer<char>::Copy(Env(), 
+                                    async_result_->readers_name, 
+                                    async_result_->readers_name_length)
+        });
+    } else {
+        Callback().Call({
+            Env().Undefined(),
+            Env().Undefined()
+        });
+    }
+}
 
+void PCSCLite::ReaderWorker::OnError(const Napi::Error& e) {
+    Callback().Call({e.Value()});
+}
+
+Napi::Value PCSCLite::Start(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    
+    if (info.Length() < 1 || !info[0].IsFunction()) {
+        Napi::TypeError::New(env, "Callback function expected").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    
+    Napi::Function callback = info[0].As<Napi::Function>();
+    m_callback = Napi::Persistent(callback);
+    
+    // Create thread safe function
+    m_tsfn = Napi::ThreadSafeFunction::New(
+        env,
+        callback,
+        "PCScLiteCallback",
+        0,
+        1
+    );
+    
+    // Start the monitoring thread
+    m_status_thread = std::thread(HandlerFunction, this);
+    
+    return env.Undefined();
+}
+
+Napi::Value PCSCLite::Close(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
     LONG result = SCARD_S_SUCCESS;
-    if (obj->m_pnp) {
-        if (obj->m_status_thread) {
-            uv_mutex_lock(&obj->m_mutex);
-            if (obj->m_state == 0) {
+    
+    if (m_pnp) {
+        if (m_status_thread.joinable()) {
+            std::unique_lock<std::mutex> lock(m_mutex);
+            if (m_state == 0) {
                 int ret;
                 int times = 0;
-                obj->m_state = 1;
+                m_state = 1;
                 do {
-                    result = SCardCancel(obj->m_card_context);
-                    ret = uv_cond_timedwait(&obj->m_cond, &obj->m_mutex, 10000000);
-                } while ((ret != 0) && (++ times < 5));
+                    result = SCardCancel(m_card_context);
+                    ret = std::cv_status::timeout == m_cond.wait_for(lock, std::chrono::microseconds(10000000)) ? -1 : 0;
+                } while ((ret != 0) && (++times < 5));
             }
-
-            uv_mutex_unlock(&obj->m_mutex);
         }
     } else {
-        obj->m_state = 1;
+        m_state = 1;
     }
 
-    if (obj->m_status_thread) {
-        assert(uv_thread_join(&obj->m_status_thread) == 0);
-        obj->m_status_thread = 0;
+    if (m_status_thread.joinable()) {
+        m_status_thread.join();
     }
-
-    info.GetReturnValue().Set(Nan::New<Number>(result));
-}
-
-void PCSCLite::HandleReaderStatusChange(uv_async_t *handle) {
-
-    Nan::HandleScope scope;
-
-    AsyncBaton* async_baton = static_cast<AsyncBaton*>(handle->data);
-    AsyncResult* ar = async_baton->async_result;
-
-    if (async_baton->pcsclite->m_state == 1) {
-        // Swallow events : Listening thread was cancelled by user.
-    } else if ((ar->result == SCARD_S_SUCCESS) ||
-               (ar->result == (LONG)SCARD_E_NO_READERS_AVAILABLE)) {
-        const unsigned argc = 2;
-        Local<Value> argv[argc] = {
-            Nan::Undefined(), // argument
-            Nan::CopyBuffer(ar->readers_name, ar->readers_name_length).ToLocalChecked()
-        };
-
-        Nan::Callback(Nan::New(async_baton->callback)).Call(argc, argv, async_resource);
-    } else {
-        Local<Value> argv[1] = { Nan::Error(ar->err_msg.c_str()) };
-        Nan::Callback(Nan::New(async_baton->callback)).Call(1, argv, async_resource);
+    
+    if (m_tsfn) {
+        m_tsfn.Release();
     }
-
-    // Do exit, after throwing last events
-    if (ar->do_exit) {
-        // necessary otherwise UV will block
-        uv_close(reinterpret_cast<uv_handle_t*>(&async_baton->async), CloseCallback);
-        return;
-    }
-
-    /* reset AsyncResult */
-#ifdef SCARD_AUTOALLOCATE
-    PCSCLite* pcsclite = async_baton->pcsclite;
-    SCardFreeMemory(pcsclite->m_card_context, ar->readers_name);
-#else
-    delete [] ar->readers_name;
-#endif
-    ar->readers_name = NULL;
-    ar->readers_name_length = 0;
-    ar->result = SCARD_S_SUCCESS;
+    
+    return Napi::Number::New(env, result);
 }
 
 void PCSCLite::HandlerFunction(void* arg) {
-
+    PCSCLite* pcsclite = static_cast<PCSCLite*>(arg);
+    AsyncResult* async_result = new AsyncResult();
     LONG result = SCARD_S_SUCCESS;
-    AsyncBaton* async_baton = static_cast<AsyncBaton*>(arg);
-    PCSCLite* pcsclite = async_baton->pcsclite;
-    async_baton->async_result = new AsyncResult();
-
+    
+    auto callback = [pcsclite, async_result](Napi::Env env, Napi::Function jsCallback) {
+        if (pcsclite->m_state == 1) {
+            // Swallow events: Listening thread was cancelled by user
+        } else if ((async_result->result == SCARD_S_SUCCESS) ||
+                  (async_result->result == (LONG)SCARD_E_NO_READERS_AVAILABLE)) {
+            // Success case
+            if (async_result->readers_name && async_result->readers_name_length > 0) {
+                jsCallback.Call({
+                    env.Undefined(),
+                    Napi::Buffer<char>::Copy(env, 
+                                           async_result->readers_name, 
+                                           async_result->readers_name_length)
+                });
+            } else {
+                jsCallback.Call({
+                    env.Undefined(),
+                    env.Undefined()
+                });
+            }
+        } else {
+            // Error case
+            jsCallback.Call({
+                Napi::Error::New(env, async_result->err_msg).Value()
+            });
+        }
+        
+        // Reset AsyncResult for reuse
+#ifdef SCARD_AUTOALLOCATE
+        if (async_result->readers_name) {
+            SCardFreeMemory(pcsclite->m_card_context, async_result->readers_name);
+        }
+#else
+        delete[] async_result->readers_name;
+#endif
+        async_result->readers_name = NULL;
+        async_result->readers_name_length = 0;
+        async_result->result = SCARD_S_SUCCESS;
+    };
+    
     while (!pcsclite->m_state) {
-        /* Get card readers */
-        result = pcsclite->get_card_readers(pcsclite, async_baton->async_result);
+        // Get card readers
+        result = pcsclite->get_card_readers(async_result);
         if (result == (LONG)SCARD_E_NO_READERS_AVAILABLE) {
             result = SCARD_S_SUCCESS;
         }
-
-        /* Store the result in the baton */
-        async_baton->async_result->result = result;
+        
+        // Store the result
+        async_result->result = result;
         if (result != SCARD_S_SUCCESS) {
-            async_baton->async_result->err_msg = error_msg("SCardListReaders",
-                                                           result);
+            async_result->err_msg = error_msg("SCardListReaders", result);
         }
-
-        /* Notify the nodejs thread */
-        uv_async_send(&async_baton->async);
-
+        
+        // Notify the JavaScript thread
+        pcsclite->m_tsfn.BlockingCall(callback);
+        
         if (result == SCARD_S_SUCCESS) {
             if (pcsclite->m_pnp) {
-                /* Set current status */
-                pcsclite->m_card_reader_state.dwCurrentState =
-                    pcsclite->m_card_reader_state.dwEventState;
-                /* Start checking for status change */
+                // Set current status
+                pcsclite->m_card_reader_state.dwCurrentState = pcsclite->m_card_reader_state.dwEventState;
+                // Start checking for status change
                 result = SCardGetStatusChange(pcsclite->m_card_context,
-                                              INFINITE,
-                                              &pcsclite->m_card_reader_state,
-                                              1);
-
-                uv_mutex_lock(&pcsclite->m_mutex);
-                async_baton->async_result->result = result;
+                                             INFINITE,
+                                             &pcsclite->m_card_reader_state,
+                                             1);
+                
+                std::unique_lock<std::mutex> lock(pcsclite->m_mutex);
+                async_result->result = result;
                 if (pcsclite->m_state) {
-                    uv_cond_signal(&pcsclite->m_cond);
+                    pcsclite->m_cond.notify_all();
                 }
-
+                
                 if (result != SCARD_S_SUCCESS) {
                     pcsclite->m_state = 2;
-                    async_baton->async_result->err_msg =
-                      error_msg("SCardGetStatusChange", result);
+                    async_result->err_msg = error_msg("SCardGetStatusChange", result);
                 }
-
-                uv_mutex_unlock(&pcsclite->m_mutex);
             } else {
-                /*  If PnP is not supported, just wait for 1 second */
+                // If PnP is not supported, just wait for 1 second
+#ifdef _WIN32
                 Sleep(1000);
+#else
+                usleep(1000000);
+#endif
             }
         } else {
-            /* Error on last card access, stop monitoring */
+            // Error on last card access, stop monitoring
             pcsclite->m_state = 2;
         }
     }
-
-    async_baton->async_result->do_exit = true;
-    uv_async_send(&async_baton->async);
+    
+    // Final notification before exiting
+    async_result->do_exit = true;
+    pcsclite->m_tsfn.BlockingCall(callback);
+    pcsclite->m_tsfn.Release();
+    
+    delete async_result;
 }
 
-void PCSCLite::CloseCallback(uv_handle_t *handle) {
-
-    /* cleanup process */
-    AsyncBaton* async_baton = static_cast<AsyncBaton*>(handle->data);
-    AsyncResult* ar = async_baton->async_result;
-#ifdef SCARD_AUTOALLOCATE
-    PCSCLite* pcsclite = async_baton->pcsclite;
-    SCardFreeMemory(pcsclite->m_card_context, ar->readers_name);
-#else
-    delete [] ar->readers_name;
-#endif
-    delete ar;
-    async_baton->callback.Reset();
-    delete async_baton;
-}
-
-LONG PCSCLite::get_card_readers(PCSCLite* pcsclite, AsyncResult* async_result) {
-
+LONG PCSCLite::get_card_readers(AsyncResult* async_result) {
     DWORD readers_name_length;
     LPTSTR readers_name;
-
+    
     LONG result = SCARD_S_SUCCESS;
-
-    /* Reset the readers_name in the baton */
+    
+    // Reset the readers_name in the result
     async_result->readers_name = NULL;
     async_result->readers_name_length = 0;
-
+    
 #ifdef SCARD_AUTOALLOCATE
     readers_name_length = SCARD_AUTOALLOCATE;
-    result = SCardListReaders(pcsclite->m_card_context,
-                              NULL,
-                              (LPTSTR)&readers_name,
-                              &readers_name_length);
+    result = SCardListReaders(m_card_context,
+                             NULL,
+                             (LPTSTR)&readers_name,
+                             &readers_name_length);
 #else
-    /* Find out ReaderNameLength */
-    result = SCardListReaders(pcsclite->m_card_context,
-                              NULL,
-                              NULL,
-                              &readers_name_length);
+    // Find out ReaderNameLength
+    result = SCardListReaders(m_card_context,
+                             NULL,
+                             NULL,
+                             &readers_name_length);
     if (result != SCARD_S_SUCCESS) {
         return result;
     }
-
-    /*
-     * Allocate Memory for ReaderName and retrieve all readers in the terminal
-     */
+    
+    // Allocate Memory for ReaderName and retrieve all readers in the terminal
     readers_name = new char[readers_name_length];
-    result = SCardListReaders(pcsclite->m_card_context,
-                              NULL,
-                              readers_name,
-                              &readers_name_length);
+    result = SCardListReaders(m_card_context,
+                             NULL,
+                             readers_name,
+                             &readers_name_length);
 #endif
-
+    
     if (result != SCARD_S_SUCCESS) {
 #ifndef SCARD_AUTOALLOCATE
-        delete [] readers_name;
+        delete[] readers_name;
 #endif
         readers_name = NULL;
         readers_name_length = 0;
+        
 #ifndef SCARD_AUTOALLOCATE
-        /* Retry in case of insufficient buffer error */
+        // Retry in case of insufficient buffer error
         if (result == (LONG)SCARD_E_INSUFFICIENT_BUFFER) {
-            result = get_card_readers(pcsclite, async_result);
+            result = get_card_readers(async_result);
         }
 #endif
+        
         if (result == SCARD_E_NO_SERVICE || result == SCARD_E_SERVICE_STOPPED) {
-            SCardReleaseContext(pcsclite->m_card_context);
-            SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &pcsclite->m_card_context);
-            result = get_card_readers(pcsclite, async_result);
+            SCardReleaseContext(m_card_context);
+            SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &m_card_context);
+            result = get_card_readers(async_result);
         }
     } else {
-        /* Store the readers_name in the baton */
+        // Store the readers_name in the result
         async_result->readers_name = readers_name;
         async_result->readers_name_length = readers_name_length;
     }
-
+    
     return result;
 }

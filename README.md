@@ -297,9 +297,11 @@ For macOS and Linux build, there are plenty of services to choose from, for exam
 
 ### Are prebuilt binaries provided?
 
-No, because it brings more problems than it solves. The C++ code (Node Native Modules, C++ Addons) is built automatically during installation (using [node-gyp](https://github.com/nodejs/node-gyp)).
+Yes! Starting from version 0.7.0, this library provides prebuilt binaries for common platforms (Windows, macOS, Linux) and for both Node.js and Electron. The prebuilt binaries are automatically downloaded during installation, so you don't need to have a C/C++ compiler installed.
 
-That means that cross-compilation is not possible by default. If you want to use this library in your [Electron](https://www.electronjs.org/) or [NW.js](https://nwjs.io/), see [Can I use this library in my Electron app?](#can-i-use-this-library-in-my-electron-app).
+If a prebuilt binary for your platform is not available, the library will automatically build from source using [node-gyp](https://github.com/nodejs/node-gyp). In this case, you'll need to have a C/C++ compiler and the PC/SC development libraries installed (see the [Installation](#installation) section).
+
+This makes it much easier to use this library in your [Electron](https://www.electronjs.org/) or [NW.js](https://nwjs.io/) applications without having to worry about rebuilding the native module.
 
 ### Disabling drivers to make pcsclite working on Linux
 

@@ -1,6 +1,6 @@
 {
   "name": "@pokusew/pcsclite",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Bindings over PC/SC to access Smart Cards",
   "keywords": [
     "nfc",
@@ -44,15 +44,20 @@
   ],
   "scripts": {
     "install": "node-gyp rebuild",
-    "test": "mocha --exit"
+    "test": "mocha --exit",
+    "prebuild": "prebuildify --napi --strip",
+    "prebuild-electron": "prebuildify --napi --strip --target=28.0.0 --arch=x64"
   },
   "dependencies": {
-    "nan": "^2.18.0"
+    "node-addon-api": "^7.0.0"
   },
   "devDependencies": {
     "mocha": "^10.2.0",
     "should": "^13.2.3",
     "sinon": "^16.0.0"
   },
-  "gypfile": true
+  "gypfile": true,
+  "engines": {
+    "node": ">= 10.0.0"
+  }
 }

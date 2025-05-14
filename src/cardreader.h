@@ -1,9 +1,11 @@
 #ifndef CARDREADER_H
 #define CARDREADER_H
 
-#include <nan.h>
-#include <node_version.h>
+#include <napi.h>
 #include <string>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 #ifdef __APPLE__
 #include <PCSC/winscard.h>
 #include <PCSC/wintypes.h>
@@ -20,20 +22,16 @@
 #define IOCTL_CCID_ESCAPE (0x42000000 + 1)
 #endif
 
-static Nan::Persistent<v8::String> name_symbol;
-static Nan::Persistent<v8::String> connected_symbol;
+class CardReader : public Napi::ObjectWrap<CardReader> {
+public:
+    static Napi::Object Init(Napi::Env env, Napi::Object exports);
+    CardReader(const Napi::CallbackInfo& info);
+    ~CardReader();
 
-class CardReader: public Nan::ObjectWrap {
+    const SCARDHANDLE& GetHandler() const { return m_card_handle; };
 
-    // We use a struct to store information about the asynchronous "work request".
-    struct Baton {
-        uv_work_t request;
-        Nan::Persistent<v8::Function> callback;
-        CardReader *reader;
-        void *input;
-        void *result;
-    };
-
+private:
+    // Structures
     struct ConnectInput {
         DWORD share_mode;
         DWORD pref_protocol;
@@ -78,61 +76,89 @@ class CardReader: public Nan::ObjectWrap {
         bool do_exit;
     };
 
-    struct AsyncBaton {
-        uv_async_t async;
-        Nan::Persistent<v8::Function> callback;
-        CardReader *reader;
-        AsyncResult *async_result;
+    // AsyncWorker classes
+    class ConnectWorker : public Napi::AsyncWorker {
+    public:
+        ConnectWorker(Napi::Function& callback, CardReader* reader, ConnectInput* input);
+        ~ConnectWorker();
+        void Execute() override;
+        void OnOK() override;
+    private:
+        CardReader* reader_;
+        ConnectInput* input_;
+        ConnectResult result_;
     };
 
+    class DisconnectWorker : public Napi::AsyncWorker {
     public:
-
-        static void init(v8::Local<v8::Object> target);
-
-        const SCARDHANDLE& GetHandler() const { return m_card_handle; };
-
+        DisconnectWorker(Napi::Function& callback, CardReader* reader, DWORD disposition);
+        ~DisconnectWorker();
+        void Execute() override;
+        void OnOK() override;
     private:
+        CardReader* reader_;
+        DWORD disposition_;
+        LONG result_;
+    };
 
-        CardReader(const std::string &reader_name);
-
-        ~CardReader();
-
-        static Nan::Persistent<v8::Function> constructor;
-
-        static NAN_METHOD(New);
-        static NAN_METHOD(GetStatus);
-        static NAN_METHOD(Connect);
-        static NAN_METHOD(Disconnect);
-        static NAN_METHOD(Transmit);
-        static NAN_METHOD(Control);
-        static NAN_METHOD(Close);
-
-        static void HandleReaderStatusChange(uv_async_t *handle);
-        static void HandlerFunction(void* arg);
-        static void DoConnect(uv_work_t* req);
-        static void DoDisconnect(uv_work_t* req);
-        static void DoTransmit(uv_work_t* req);
-        static void DoControl(uv_work_t* req);
-        static void CloseCallback(uv_handle_t *handle);
-
-        static void AfterConnect(uv_work_t* req, int status);
-        static void AfterDisconnect(uv_work_t* req, int status);
-        static void AfterTransmit(uv_work_t* req, int status);
-        static void AfterControl(uv_work_t* req, int status);
-
-        static v8::Local<v8::Value> CreateBufferInstance(char* data, unsigned long size);
-
+    class TransmitWorker : public Napi::AsyncWorker {
+    public:
+        TransmitWorker(Napi::Function& callback, CardReader* reader, TransmitInput* input);
+        ~TransmitWorker();
+        void Execute() override;
+        void OnOK() override;
     private:
+        CardReader* reader_;
+        TransmitInput* input_;
+        TransmitResult result_;
+    };
 
-        SCARDCONTEXT m_card_context;
-        SCARDCONTEXT m_status_card_context;
-        SCARDHANDLE m_card_handle;
-        std::string m_name;
-        uv_thread_t m_status_thread;
-        uv_mutex_t m_mutex;
-        uv_cond_t m_cond;
-        int m_state;
-        static Nan::AsyncResource *async_resource;
+    class ControlWorker : public Napi::AsyncWorker {
+    public:
+        ControlWorker(Napi::Function& callback, CardReader* reader, ControlInput* input);
+        ~ControlWorker();
+        void Execute() override;
+        void OnOK() override;
+    private:
+        CardReader* reader_;
+        ControlInput* input_;
+        ControlResult result_;
+    };
+
+    class StatusWorker : public Napi::AsyncWorker {
+    public:
+        StatusWorker(Napi::Function& callback, CardReader* reader);
+        ~StatusWorker();
+        void Execute() override;
+        void OnOK() override;
+        void NotifyJS();
+    private:
+        CardReader* reader_;
+        AsyncResult* async_result_;
+    };
+
+    // Napi methods
+    Napi::Value GetStatus(const Napi::CallbackInfo& info);
+    Napi::Value Connect(const Napi::CallbackInfo& info);
+    Napi::Value Disconnect(const Napi::CallbackInfo& info);
+    Napi::Value Transmit(const Napi::CallbackInfo& info);
+    Napi::Value Control(const Napi::CallbackInfo& info);
+    Napi::Value Close(const Napi::CallbackInfo& info);
+
+    // Thread function
+    static void HandlerFunction(void* arg);
+
+    // Member variables
+    SCARDCONTEXT m_card_context;
+    SCARDCONTEXT m_status_card_context;
+    SCARDHANDLE m_card_handle;
+    std::string m_name;
+    std::thread m_status_thread;
+    std::mutex m_mutex;
+    std::condition_variable m_cond;
+    int m_state;
+    Napi::ThreadSafeFunction m_tsfn;
+    Napi::FunctionReference m_status_callback;
 };
 
 #endif /* CARDREADER_H */
