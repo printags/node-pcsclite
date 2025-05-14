@@ -1,5 +1,5 @@
 {
-  "name": "@pokusew/pcsclite",
+  "name": "@printags/nfc-pcsc",
   "version": "0.8.3",
   "description": "Bindings over PC/SC to access Smart Cards",
   "keywords": [
@@ -40,21 +40,17 @@
     "examples/*.js",
     "test/*.js",
     "binding.gyp",
-    "index.d.ts",
-    "prebuilds/**/*.node"
+    "index.d.ts"
   ],
   "scripts": {
-    "install": "node-gyp-build",
-    "test": "mocha --exit",
-    "prebuild": "prebuildify --napi --strip --platform=win32"
+    "install": "node-gyp rebuild",
+    "test": "mocha --exit"
   },
   "dependencies": {
-    "node-addon-api": "^7.0.0",
-    "node-gyp-build": "^4.6.0"
+    "node-addon-api": "^7.0.0"
   },
   "devDependencies": {
     "mocha": "^10.2.0",
-    "prebuildify": "^5.0.1",
     "should": "^13.2.3",
     "sinon": "^16.0.0"
   },
