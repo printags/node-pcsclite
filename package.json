@@ -1,5 +1,5 @@
 {
-  "name": "@printags/nfc-pcsc",
+  "name": "@printags/node-pcsclite",
   "version": "0.8.3",
   "description": "Bindings over PC/SC to access Smart Cards",
   "keywords": [

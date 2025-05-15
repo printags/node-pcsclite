@@ -1,6 +1,6 @@
 # node-pcsclite
 
-[![npm](https://img.shields.io/npm/v/@pokusew/pcsclite.svg)](https://www.npmjs.com/package/@pokusew/pcsclite)
+[![npm](https://img.shields.io/npm/v/@printags/node-pcsclite.svg)](https://www.npmjs.com/package/@printags/node-pcsclite)
 [![build status](https://img.shields.io/github/actions/workflow/status/pokusew/node-pcsclite/ci.yml?logo=github)](https://github.com/pokusew/node-pcsclite/actions/workflows/ci.yml)
 [![node-pcsclite channel on discord](https://img.shields.io/badge/discord-join%20chat-61dafb.svg?logo=discord&logoColor=white)](https://discord.gg/bg3yazg)
 
@@ -72,13 +72,13 @@ Bindings over pcsclite to access Smart Cards. It works in **Linux**, **macOS** a
 3. **Install node-pcsclite using npm or yarn:**
 
     ```bash
-    npm install @pokusew/pcsclite --save
+    npm install @printags/node-pcsclite --save
     ```
     
     or using Yarn:
     
     ```bash
-    yarn add @pokusew/pcsclite
+    yarn add @printags/node-pcsclite
     ```
 
 4. **Building from source (if needed)**
@@ -95,7 +95,7 @@ Bindings over pcsclite to access Smart Cards. It works in **Linux**, **macOS** a
 > take a look at [nfc-pcsc](https://github.com/pokusew/nfc-pcsc).
 
 ```javascript
-const pcsclite = require('@pokusew/pcsclite');
+const pcsclite = require('@printags/node-pcsclite');
 
 const pcsc = pcsclite();
 
@@ -294,7 +294,7 @@ For macOS and Linux build, there are plenty of services to choose from, for exam
 
 ### Are prebuilt binaries provided?
 
-Yes! Starting from version 0.7.0, this library provides prebuilt binaries for common platforms (Windows, macOS, Linux) and for both Node.js and Electron. The prebuilt binaries are automatically downloaded during installation, so you don't need to have a C/C++ compiler installed.
+Yes! This library provides prebuilt binaries for common platforms (Windows, macOS, Linux) and for both Node.js and Electron. The prebuilt binaries are automatically downloaded during installation, so you don't need to have a C/C++ compiler installed.
 
 If a prebuilt binary for your platform is not available, the library will automatically build from source using [node-gyp](https://github.com/nodejs/node-gyp). In this case, you'll need to have a C/C++ compiler and the PC/SC development libraries installed (see the [Installation](#installation) section).
 
@@ -333,14 +333,14 @@ After reboot, there will be no driver blocking the usb bus anymore, so we can fi
 
 ### Which Node.js versions are supported?
 
-@pokusew/pcsclite officially supports the following Node.js versions: **8.x, 9.x, 10.x, 11.x, 12.x, 13.x, 14.x, 16.x, 18.x, 20.x**.
+@printags/node-pcsclite officially supports the following Node.js versions: **10.x, 12.x, 14.x, 16.x, 18.x, 20.x**.
 
 ### Can I use this library in my React Native app?
 
 Short answer: **NO**
 
-Explanation: **Mobile support is virtually impossible** because @pokusew/pcsclite uses **Node Native Modules**
-to access system **PC/SC API**. So the **Node.js runtime and PC/SC API** are required for @pokusew/pcsclite to run.
+Explanation: **Mobile support is virtually impossible** because @printags/node-pcsclite uses **Node Native Modules**
+to access system **PC/SC API**. So the **Node.js runtime and PC/SC API** are required for @printags/node-pcsclite to run.
 That makes it possible to use it on the most of OS (Windows, macOS, Linux) **directly in Node.js**
 or in **Electron.js and NW.js** desktop apps. On the other hand, these requirements are not normally met on mobile devices.
 On top of that, React Native does not contain any Node.js runtime.
@@ -350,19 +350,17 @@ On top of that, React Native does not contain any Node.js runtime.
 
 ### Error: Cannot find module '../build/Release/pcsclite.node'
 
-Starting from version 0.7.0, @pokusew/pcsclite uses pre-built binaries via `node-gyp-build` which should avoid this error. However, if you still encounter this issue, it could be due to one of these reasons:
+@printags/node-pcsclite uses pre-built binaries via `node-gyp-build` which should avoid this error. However, if you still encounter this issue, it could be due to one of these reasons:
 
-1. **You're using an older version** of the library that doesn't include pre-built binaries. Update to the latest version.
-
-2. **No pre-built binary is available for your platform**:
+1. **No pre-built binary is available for your platform**:
    * In this case, the library tries to build from source using [node-gyp](https://github.com/nodejs/node-gyp)
    * Make sure you have all the requirements for building from source as described in the [Installation](#installation) section
 
-3. **There's an issue with the pre-built binary installation**:
+2. **There's an issue with the pre-built binary installation**:
    * Try clearing your npm cache: `npm cache clean --force`
-   * Reinstall the package: `npm uninstall @pokusew/pcsclite && npm install @pokusew/pcsclite`
+   * Reinstall the package: `npm uninstall @printags/node-pcsclite && npm install @printags/node-pcsclite`
 
-If the problem persists, [open a new issue](https://github.com/pokusew/node-pcsclite/issues/new) with details about your platform, OS, Node.js version, and npm/yarn version.
+If the problem persists, [open a new issue](https://github.com/printags/node-pcsclite/issues/new) with details about your platform, OS, Node.js version, and npm/yarn version.
 
 
 ## License
