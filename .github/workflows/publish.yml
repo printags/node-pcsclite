@@ -14,7 +14,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        node-version: [20.x, 22.x]
+        node-version: [20.x]
         arch: [x64]
     steps:
       - uses: actions/checkout@v4
@@ -26,52 +26,34 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           scope: '@printags'
       
-      # Windows n'a pas besoin d'installer de dépendances pour PC/SC car c'est intégré
-          
       - name: Install dependencies
         run: npm ci
       
-      - name: Build prebuilds for Windows
-        run: npm run prebuild
-        
-      - name: Debug - Show files
+      - name: Build binary
         run: |
-          dir
-          if exist prebuilds (
-            dir prebuilds /s
-          ) else (
-            echo "prebuilds directory not found"
-          )
-          if exist build (
-            dir build /s
-          ) else (
-            echo "build directory not found"
-          )
-
-      - name: Create binary package
-        run: |
-          # Generate binary directly with node-gyp
-          echo "Building binary with node-gyp"
+          # Build with node-gyp
           node-gyp rebuild
-
-          # Create package structure
-          echo "Creating package structure"
-          mkdir -p package\win32-x64
-          copy build\Release\pcsclite.node package\win32-x64\
           
-          # Package as tar.gz
-          echo "Packaging as tar.gz"
+          # Show the built binary
+          dir build\Release
+          
+          # Create proper directory structure for node-pre-gyp
+          mkdir package\build
+          mkdir package\build\Release
+          copy build\Release\pcsclite.node package\build\Release\
+          
+          # Create the tarball
           cd package
-          tar -czf ..\win32-x64.tar.gz win32-x64
+          tar -czf ..\win32-x64.tar.gz build
           cd ..
           
-          # Verify
-          dir win32-x64.tar.gz
+          # Debug output
+          dir *.tar.gz
       
-      - name: Upload artifacts
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: win32-x64-${{ matrix.node-version }}
+          name: win32-x64
           path: win32-x64.tar.gz
 
   publish:
@@ -86,33 +68,25 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 22.x
+          node-version: 20.x
           registry-url: 'https://npm.pkg.github.com'
           scope: '@printags'
       
       - name: Install dependencies
         run: npm ci
       
-      - name: Download all artifacts
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          name: win32-x64
+          path: .
       
-      - name: Debug - Show downloaded artifacts
-        run: dir artifacts /s
-          
-      - name: Prepare for release
-        run: |
-          echo "Moving artifacts to root directory"
-          copy artifacts\win32-x64-20.x\win32-x64.tar.gz win32-x64.tar.gz
-      
-      - name: Create GitHub Release and Upload Prebuilds
+      - name: Create GitHub Release
         id: create_release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/v')
         with:
-          files: |
-            win32-x64.tar.gz
+          files: win32-x64.tar.gz
       
       - name: Publish to GitHub Packages
         run: npm publish
