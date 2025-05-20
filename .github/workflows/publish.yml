@@ -34,16 +34,45 @@ jobs:
       - name: Build prebuilds for Windows
         run: npm run prebuild
         
-      - name: List files
+      - name: Debug - Show files
         run: |
           dir
-          dir prebuilds /s
+          if exist prebuilds (
+            dir prebuilds /s
+          ) else (
+            echo "prebuilds directory not found"
+          )
+          if exist build (
+            dir build /s
+          ) else (
+            echo "build directory not found"
+          )
 
+      - name: Create binary package
+        run: |
+          # Generate binary directly with node-gyp
+          echo "Building binary with node-gyp"
+          node-gyp rebuild
+
+          # Create package structure
+          echo "Creating package structure"
+          mkdir -p package\win32-x64
+          copy build\Release\pcsclite.node package\win32-x64\
+          
+          # Package as tar.gz
+          echo "Packaging as tar.gz"
+          cd package
+          tar -czf ..\win32-x64.tar.gz win32-x64
+          cd ..
+          
+          # Verify
+          dir win32-x64.tar.gz
+      
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: prebuilds-windows-${{ matrix.node-version }}-${{ matrix.arch }}
-          path: prebuilds/
+          name: win32-x64-${{ matrix.node-version }}
+          path: win32-x64.tar.gz
 
   publish:
     needs: [build-windows]
@@ -67,21 +96,23 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: prebuilds-temp
+          path: artifacts
       
-      - name: Merge prebuilds
+      - name: Debug - Show downloaded artifacts
+        run: dir artifacts /s
+          
+      - name: Prepare for release
         run: |
-          if not exist prebuilds mkdir prebuilds
-          if exist prebuilds-temp (
-            xcopy /y /s /e /i prebuilds-temp\*\* prebuilds\
-          )
+          echo "Moving artifacts to root directory"
+          copy artifacts\win32-x64-20.x\win32-x64.tar.gz win32-x64.tar.gz
       
       - name: Create GitHub Release and Upload Prebuilds
         id: create_release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/v')
         with:
-          files: prebuilds/**/*
+          files: |
+            win32-x64.tar.gz
       
       - name: Publish to GitHub Packages
         run: npm publish
