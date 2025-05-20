@@ -36,7 +36,7 @@ jobs:
         run: npm run prebuild
         
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: prebuilds-linux-${{ matrix.node-version }}-${{ matrix.arch }}
           path: prebuilds/
@@ -67,7 +67,7 @@ jobs:
         run: npm run prebuild
         
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: prebuilds-macos-${{ matrix.node-version }}-${{ matrix.arch }}
           path: prebuilds/
@@ -98,7 +98,7 @@ jobs:
         run: npm run prebuild
         
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: prebuilds-windows-${{ matrix.node-version }}-${{ matrix.arch }}
           path: prebuilds/
@@ -123,7 +123,7 @@ jobs:
         run: npm ci
       
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: prebuilds-temp
       
