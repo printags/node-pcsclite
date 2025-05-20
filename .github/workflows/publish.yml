@@ -31,13 +31,14 @@ jobs:
       
       - name: Build binary
         run: |
-          # Build with node-gyp
-          node-gyp rebuild
+          # We're building directly with node-pre-gyp instead of npm ci,
+          # to make sure we get a binary even if we can't download one
+          npx node-pre-gyp rebuild
           
           # Show the built binary
           dir build\Release
           
-          # Create proper directory structure for node-pre-gyp
+          # Create proper directory structure for node-pre-gyp package
           mkdir package\build
           mkdir package\build\Release
           copy build\Release\pcsclite.node package\build\Release\
