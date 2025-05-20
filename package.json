@@ -52,7 +52,7 @@
   ],
   "scripts": {
     "install": "node-pre-gyp install --fallback-to-build",
-    "prebuild": "node-pre-gyp rebuild && node-pre-gyp package",
+    "prebuild": "prebuildify --napi --strip && mkdir -p prebuilds && copy build\\Release\\pcsclite.node prebuilds\\",
     "test": "mocha --exit"
   },
   "dependencies": {

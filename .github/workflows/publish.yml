@@ -26,6 +26,8 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           scope: '@printags'
       
+      # Windows n'a pas besoin d'installer de dépendances pour PC/SC car c'est intégré
+          
       - name: Install dependencies
         run: npm ci
       
@@ -64,8 +66,10 @@ jobs:
       
       - name: Merge prebuilds
         run: |
-          mkdir -p prebuilds
-          xcopy prebuilds-temp\*\* prebuilds\ /s /e /i
+          if not exist prebuilds mkdir prebuilds
+          if exist prebuilds-temp (
+            xcopy /y /s /e /i prebuilds-temp\*\* prebuilds\
+          )
       
       - name: Create GitHub Release and Upload Prebuilds
         id: create_release

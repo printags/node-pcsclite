@@ -21,5 +21,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
+      # Windows n'a pas besoin d'installer de dépendances pour PC/SC car c'est intégré
+          
       - name: Compile
         run: npm install --verbose
