@@ -34,6 +34,11 @@ jobs:
       - name: Build prebuilds for Windows
         run: npm run prebuild
         
+      - name: List files
+        run: |
+          dir
+          dir prebuilds /s
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
