@@ -14,7 +14,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        node-version: [20.x]
+        node-version: [20.x, 22.15.1]
         arch: [x64]
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +54,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: win32-x64
+          name: win32-x64-${{ matrix.node-version }}
           path: win32-x64.tar.gz
 
   publish:
@@ -69,25 +69,34 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 20.x
+          node-version: 22.15.1
           registry-url: 'https://npm.pkg.github.com'
           scope: '@printags'
       
-      - name: Install dependencies
-        run: npm ci
+      # We don't need to run npm ci here as we don't use any dependencies for this job
+      # Just downloading the artifacts and publishing
       
-      - name: Download artifact
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          name: win32-x64
-          path: .
+          path: artifacts
+          
+      - name: Prepare artifacts
+        run: |
+          dir artifacts
+          # Renaming artifacts with node version suffix
+          mkdir release
+          copy artifacts\win32-x64-20.x\win32-x64.tar.gz release\win32-x64-node20.tar.gz
+          copy artifacts\win32-x64-22.15.1\win32-x64.tar.gz release\win32-x64-node22.tar.gz
       
       - name: Create GitHub Release
         id: create_release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/v')
         with:
-          files: win32-x64.tar.gz
+          files: |
+            release/win32-x64-node20.tar.gz
+            release/win32-x64-node22.tar.gz
       
       - name: Publish to GitHub Packages
         run: npm publish
