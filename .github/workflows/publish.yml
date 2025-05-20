@@ -14,7 +14,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        node-version: [20.x, 22.15.1]
+        node-version: [20.x, 22.15.1, 23.x]
         arch: [x64]
     steps:
       - uses: actions/checkout@v4
@@ -69,7 +69,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 22.15.1
+          node-version: 23.x
           registry-url: 'https://npm.pkg.github.com'
           scope: '@printags'
       
@@ -84,10 +84,14 @@ jobs:
       - name: Prepare artifacts
         run: |
           dir artifacts
-          # Renaming artifacts with node version suffix
+          # Get Node.js ABI versions instead of Node.js versions
+          # Node.js 20.x uses ABI v115
+          # Node.js 22.15.1 uses ABI v127
+          # Node.js 23.x uses ABI v127
           mkdir release
-          copy artifacts\win32-x64-20.x\win32-x64.tar.gz release\win32-x64-node20.tar.gz
-          copy artifacts\win32-x64-22.15.1\win32-x64.tar.gz release\win32-x64-node22.tar.gz
+          copy artifacts\win32-x64-20.x\win32-x64.tar.gz release\win32-x64-node-v115.tar.gz
+          copy artifacts\win32-x64-22.15.1\win32-x64.tar.gz release\win32-x64-node-v127.tar.gz
+          copy artifacts\win32-x64-23.x\win32-x64.tar.gz release\win32-x64-node-v127.tar.gz
       
       - name: Create GitHub Release
         id: create_release
@@ -95,8 +99,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         with:
           files: |
-            release/win32-x64-node20.tar.gz
-            release/win32-x64-node22.tar.gz
+            release/win32-x64-node-v115.tar.gz
+            release/win32-x64-node-v127.tar.gz
       
       - name: Publish to GitHub Packages
         run: npm publish
