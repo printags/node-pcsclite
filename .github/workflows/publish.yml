@@ -7,10 +7,107 @@ on:
   workflow_dispatch:
 
 jobs:
-  publish:
+  build-linux:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
+      packages: write
+    strategy:
+      matrix:
+        node-version: [14.x, 16.x, 18.x, 20.x]
+        arch: [x64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@printags'
+      
+      - name: Install pcsclite dependencies
+        run: sudo apt-get install -y libpcsclite1 libpcsclite-dev pcscd
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build prebuilds for Linux
+        run: npm run prebuild
+        
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: prebuilds-linux-${{ matrix.node-version }}-${{ matrix.arch }}
+          path: prebuilds/
+
+  build-macos:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+      packages: write
+    strategy:
+      matrix:
+        node-version: [14.x, 16.x, 18.x, 20.x]
+        arch: [x64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@printags'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build prebuilds for macOS
+        run: npm run prebuild
+        
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: prebuilds-macos-${{ matrix.node-version }}-${{ matrix.arch }}
+          path: prebuilds/
+
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      packages: write
+    strategy:
+      matrix:
+        node-version: [14.x, 16.x, 18.x, 20.x]
+        arch: [x64, ia32]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@printags'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build prebuilds for Windows
+        run: npm run prebuild
+        
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: prebuilds-windows-${{ matrix.node-version }}-${{ matrix.arch }}
+          path: prebuilds/
+
+  publish:
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
       packages: write
     steps:
       - uses: actions/checkout@v4
@@ -22,11 +119,25 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           scope: '@printags'
       
-      - name: Install pcsclite dependencies
-        run: sudo apt-get install -y libpcsclite1 libpcsclite-dev pcscd
-      
       - name: Install dependencies
         run: npm ci
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: prebuilds-temp
+      
+      - name: Merge prebuilds
+        run: |
+          mkdir -p prebuilds
+          cp -r prebuilds-temp/*/* prebuilds/
+      
+      - name: Create GitHub Release and Upload Prebuilds
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: prebuilds/**/*
       
       - name: Publish to GitHub Packages
         run: npm publish
