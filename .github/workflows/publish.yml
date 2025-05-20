@@ -31,6 +31,11 @@ jobs:
       
       - name: Build binary
         run: |
+          # Print Node.js version information for debugging
+          node -v
+          node -p "process.versions"
+          node -p "process.versions.modules" # This shows the NODE_MODULE_VERSION
+          
           # We're building directly with node-pre-gyp instead of npm ci,
           # to make sure we get a binary even if we can't download one
           npx node-pre-gyp rebuild
@@ -86,12 +91,14 @@ jobs:
           dir artifacts
           # Get Node.js ABI versions instead of Node.js versions
           # Node.js 20.x uses ABI v115
-          # Node.js 22.15.1 uses ABI v127
+          # Node.js 22.15.1 uses ABI v127 (confirmed by user testing)
           # Node.js 23.x uses ABI v127
           mkdir release
           copy artifacts\win32-x64-20.x\win32-x64.tar.gz release\win32-x64-node-v115.tar.gz
           copy artifacts\win32-x64-22.15.1\win32-x64.tar.gz release\win32-x64-node-v127.tar.gz
-          copy artifacts\win32-x64-23.x\win32-x64.tar.gz release\win32-x64-node-v127.tar.gz
+          
+          # Create an additional copy with v123 name for broader compatibility
+          copy artifacts\win32-x64-20.x\win32-x64.tar.gz release\win32-x64-node-v123.tar.gz
       
       - name: Create GitHub Release
         id: create_release
@@ -100,6 +107,7 @@ jobs:
         with:
           files: |
             release/win32-x64-node-v115.tar.gz
+            release/win32-x64-node-v123.tar.gz
             release/win32-x64-node-v127.tar.gz
       
       - name: Publish to GitHub Packages
